@@ -1,0 +1,1 @@
+/usr/bin/c++  -g  -static CMakeFiles/vsys_email_client.dir/main.cpp.o CMakeFiles/vsys_email_client.dir/protocol.cpp.o CMakeFiles/vsys_email_client.dir/Functions.cpp.o  -o vsys_email_client 

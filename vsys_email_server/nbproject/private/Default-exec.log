@@ -1,0 +1,10 @@
+called: /usr/bin/g++
+	/Users/acs/FH_Technikum_Wien/Semester_3/Verteilte_Systeme/vsys_email_server
+	/usr/bin/g++
+	-std=c++11
+	-ggdb
+	-o
+	server
+	ClientHandler.cpp
+	main.cpp
+

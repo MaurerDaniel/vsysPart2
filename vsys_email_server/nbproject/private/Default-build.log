@@ -1,0 +1,28 @@
+g++ -std=c++11 -ggdb -o server *.cpp
+ClientHandler.cpp:19:9: error: use of undeclared identifier 'ClientHandler'
+ssize_t ClientHandler::writen(const char *vptr, size_t n) {
+        ^
+ClientHandler.cpp:39:9: error: use of undeclared identifier 'ClientHandler'
+ssize_t ClientHandler::my_read(char *ptr) {
+        ^
+ClientHandler.cpp:58:9: error: use of undeclared identifier 'ClientHandler'
+ssize_t ClientHandler::readline(void *vptr, size_t maxlen) {
+        ^
+ClientHandler.cpp:12:2: error: unterminated conditional directive
+#ifndef VSYS_EMAIL_SERVER_CLIENTHANDLER_H
+ ^
+4 errors generated.
+main.cpp:258:11: error: assigning to 'char *' from incompatible type 'void *'
+    ptr = vptr;
+          ^~~~
+main.cpp:280:11: error: assigning to 'const char *' from incompatible type 'const void *'
+    ptr = vptr;
+          ^~~~
+main.cpp:287:17: error: use of undeclared identifier 'retung'
+                retung(-1);
+                ^
+main.cpp:320:11: error: assigning to 'char *' from incompatible type 'void *'
+    ptr = vptr;
+          ^~~~
+4 errors generated.
+make: *** [server] Error 1
