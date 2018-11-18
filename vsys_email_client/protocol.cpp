@@ -27,6 +27,40 @@
 #define SUB 80
 #define RES 8
 
+//
+//Client::Client(string progName, string serverIP, int srvrPrt) 
+//{
+//	this->pName = progName;
+//	memset(&this -> srvrAddr, 0, sizeof(this->srvrAddr));
+//	this->srvrAddr.sin_family = AF_INET;
+//	this->srvrAddr.sin_port = htons(srvrPrt);
+//	/*
+//	Socket
+//	*/
+//	this->clientSocket = socket(AF_INET, SOCK_STREAM, 0);
+//	if (this->clientSocket == -1)
+//	{
+//		perror("Verbindungsfehler - Kein Server gefunden!");
+//		return EXIT_FAILURE;
+//	}
+//}
+//
+//Client::~Client() 
+//{
+//	cout << "Client Socket wird geschlossen." << endl;
+//	int closeNum = close(this->clientSocket);
+//	if (closeNum != 0)
+//	{
+//		perror("Fehler!");
+//		return EXIT_FAILURE;
+//	}
+//}
+//
+//// verbindung erstellen 
+//void Client::createConnection()
+// ...
+
+
 //user enters data and the array holding the data gets constructed
 SEND::SEND() {
 

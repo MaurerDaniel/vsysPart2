@@ -10,6 +10,7 @@
 #ifndef VSYS_EMAIL_CLIENT_PROTOCOL_H
 #define VSYS_EMAIL_CLIENT_PROTOCOL_H
 
+using namespace std;
 
 ssize_t writen(int fd, const char *vptr, size_t n);
 
@@ -18,6 +19,34 @@ ssize_t readline(int socket, char *vptr, size_t maxlen);
 ssize_t my_read(int socket, char *ptr);
 
 bool checkErr(int socket);
+
+//class Client {
+//
+//	public:
+//		Client(string progName, string srvrIP, int srvrPrt);
+//		~Client();
+//		void createConnection();
+//		string getUserInput(string mode);
+//		void SEND();
+//		void LIST();
+//		void READ();
+//		void DEL();
+//		void QUIT();
+//		void LOGIN();
+//
+//private:
+//	string progName;
+//	int clientSocket;
+//	struct in_sockAddr srvrAddr;
+//	void sendMessage(string message);
+//	string recvMessage();
+//	string printResponseAndReturn();
+//	string getUserPW();
+//	string readLine(int fd, bool& succes);
+//	ssize_t myRead(int fd, char *ptr);
+//
+//};
+//
 
 
 class SEND {

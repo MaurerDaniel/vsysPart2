@@ -28,7 +28,8 @@ bool isDigit(char* string);
 std::string toLower(std::string string);
 bool isEqual(std::string str1, std::string str2);
 std::string getMessageLine(int i, std::list<std::string> message);
-
+//bool acceptConnection(int& clientSocket, string&clientIP);
+long timeNow(string einheit);
 
 
 #endif /* FUNCTIONS_H */

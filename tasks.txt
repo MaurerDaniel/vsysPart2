@@ -1,0 +1,59 @@
+1. - Parallele Requests von mehreren Clients
+2. - LOGIN Funktion
+3. - Synchronisationsprobleme 
+4. - Protokoll erweitern
+	LOGIN:
+	4.1- Client schickt username und pw an server. 
+	4.2- Server verbindet mit FH LDAP
+		4.2.1- Server versucht user zu authentifizieren
+			4.2.1.1- Bei ungültiger anmeldung verweigert BEFEHLE (send, read,...)
+			4.2.1.2- und wartet auf erneuten LOGIN
+		4.2.2- Wenn Login erfolgteich 
+			4.2.2.1- wird username zur weiteren verwendung übernommen
+			4.2.2.2- mails können nur noch mit dem user geschickt, empfangen und gelöscht werden.
+		4.2.3- Bei 3x falsch beendet der server die socket verbindung
+		4.2.4- und sperrt die IP-Adresse für zeitspanne (#define constante)
+	4.3- Datenstruktur für gesperrte clients
+
+ALLGEMEIN: 
+- keine Zombieprozesse
+- korrekte Fehlerabfragen
+- dokumentieren
+
+Optional:
+- send und read um attachments erweitern
+- mehrere Empfänger und sent folder
+- verschlüsselung
+#####
+Protokoll Hinweise
+Der Protokollaufbau des LOGIN Befehls ist wie folgt definiert:
+LOGIN\n
+<LDAP Username max. 8 Zeichen>\n
+<Passwort>\n
+Der Server antwortet bei korrekten Parametern und erfolgreichem Login mit:
+OK\n
+Der Server antwortet im Fehlerfall (User nicht vorhanden, Fehler beim Authentifizieren, 
+etc.) mit:
+ERR\n
+####
+
+- in SEND, READ, LIST, DEL entfällt die Angabe des senders (sender = usernam vom login)
+- Antwort mit ERR\n falls zuvor kein erfolgreicher LOGIN durchgeführt wurde
+
+#### low level I/O FUNKTIONEN http://openbook.galileocomputing.de/c_von_a_bis_z/
+
+- LDAP Authentifizierung in 3 Schritten
+	- 1. anonyme Anmeldung 
+	- 2. im LDAP Verzeichnis wird nach user (uid) gesucht
+	- 3. falls user gefunden, kann durch erneute anmeldung mit 
+	vollständigen daten überprüft werden ob PW richtig ist (da nicht direkt auf PW zugegriffen wird)
+
+####
+Beispiel:
+Anonyme Anmeldung und Suche nach uid=nimm liefert als Ergebnis: 
+dn: uid=nimm,ou=People,dc=technikum-wien,dc=at
+ACHTUNG: Anonyme Anmeldung ist nur FH-intern erlaubt!
+Weitere Infos zur LDAP API : http://www.yolinux.com/TUTORIALS/LinuxTutorialLDAP
+-
+SoftwareDevelopment.html
+####

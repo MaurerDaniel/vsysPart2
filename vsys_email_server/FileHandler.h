@@ -26,13 +26,14 @@ public:
     FileHandler(std::string root);
     void setRootDirectory(std::string root);
     std::list<std::string> handleRequest(std::list<std::string> message, MessageType type);
+	bool createUserDir(std::string userFolder);
+
 
 private:
     std::string rootDir;
     const char* OK = "OK\n";
     const char* ERR = "ERR\n";
     const std::string CURRENT_ID_FILENAME = "/currentID.txt";
-    int createUserDir(std::string userFolder);
     std::string getUserFolder(std::string user);
     std::list<std::string> safeMessage(std::list<std::string> message, std::string userFolder);
     int getNextMessageID(std::string userFolder);

@@ -50,11 +50,11 @@ int main(int argc, char **argv) {
         perror("Socket fehler");
         return EXIT_FAILURE;
     }
-
     memset(&address, 0, sizeof(address));
     address.sin_family = AF_INET;
     address.sin_port = htons(PORT);
     inet_aton(serverAdress, &address.sin_addr);
+	// auslagern auf funktion
 
     if (connect(create_socket, (struct sockaddr *) &address, sizeof(address)) == 0) {
         printf("Verbindung zum Server (%s) wurde hergestellt\n", inet_ntoa(address.sin_addr));
@@ -67,6 +67,8 @@ int main(int argc, char **argv) {
         perror("Verbindungsfehler - Kein Server gefunden!");
         return EXIT_FAILURE;
     }
+
+	void Client::
 
     //Hauptmenü
     do {

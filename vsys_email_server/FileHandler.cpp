@@ -58,17 +58,17 @@ void FileHandler::setRootDirectory(std::string root) {
  * @param userFolder
  * @return 1 bei erstellen -1 bei fehler
  */
-int FileHandler::createUserDir(std::string userFolder) {
+bool FileHandler::createUserDir(std::string userFolder) {
     const int dir_err = mkdir(userFolder.c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
     if (-1 == dir_err) {
-        return -1;
+        return false;
     }
     userFolder.append(CURRENT_ID_FILENAME);
     std::ofstream o(userFolder);
 
     o << "0\n" << std::endl;
     o.close();
-    return 1;
+    return true;
 }
 
 /**
