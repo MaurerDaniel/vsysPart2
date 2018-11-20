@@ -21,7 +21,9 @@
 #include <termios.h> // struct termios, tcgetattr(), tcsetattr(), ECHO, TCSANOW
 #include <uuid/uuid.h> // uuid_t, uuid_generate(), uuid_unparse()
 #include <iostream>
-#include "helper.h"
+#include <signal.h> 
+#include <thread>
+//#include "helper.h"
 
 #include "ClientHandler.h"
 #include "Functions.h"
@@ -43,6 +45,8 @@ set<int> goodBois;
 void putze();
 void hanldeIncoming(int boi);
 void CheckArgs(int argc, char* argv[], int& srvrPort, string& mailDirect);
+void threadSwitch(int cSocket, string cIP);
+
 
 int main(int argc, char **argv) {
 	//int PORT;
@@ -110,7 +114,7 @@ int main(int argc, char **argv) {
 	string mailDirect;
 	CheckArgs(argc, argv, sport, mailDirect);
 
-	mServer = new Server(string progName, int sport, string mailDirect);
+	mServer = new Server(progName, sport, mailDirect);
 	mServer->beginListen();
 	while (1)
 	{
@@ -123,7 +127,7 @@ int main(int argc, char **argv) {
 		{
 			//mutex afrufe sind da um mehrfachzugriff auf gleiche sachen zu blockierern oÄ.
 			goodBois.insert(cSocket);
-			thread thrd(threadChef, cSocket, cIP);
+			thread thrd(threadSwitch, cSocket, cIP);
 			thrd.detach();
 		}
 		else
@@ -137,8 +141,8 @@ int main(int argc, char **argv) {
 
 void putze() {
 	{
-		for (set<int>::iterator obi = activeClients.begin(); obi != activeClients.end(); ++obi) {
-			mServer->closeConnection(*obi);
+		for (set<int>::iterator obi = goodBois.begin(); obi != goodBois.end(); ++obi) {
+			mServer->extConnect(*obi);
 		}
 	}
 
@@ -151,7 +155,7 @@ void hanldeIncoming(int boi) {
 		cout << endl;
 		putze();
 	}
-	return EXIT_SUCCESS;
+	exit(EXIT_SUCCESS);
 }
 
 void CheckArgs(int argc, char* argv[], int& srvrPort, string& mailDirect)
@@ -160,9 +164,8 @@ void CheckArgs(int argc, char* argv[], int& srvrPort, string& mailDirect)
 	if (argc != 3)
 	{
 		cerr << "Verwendung: " << progName << " server_port mail_directory" << endl;
-		return EXIT_FAILURE;
+		exit(EXIT_FAILURE);
 	}
-	serverPort = GeneralHelper::argToInt(argv[1]);
 
 	char* arg = argv[1];
 
@@ -175,36 +178,36 @@ void CheckArgs(int argc, char* argv[], int& srvrPort, string& mailDirect)
 	}
 
 	srvrPort = argAsInt;
-	mailDirectory = argv[2];
+	mailDirect = argv[2];
 }
 
 
-void threadChef(int cSocket, string cIP) {
+void threadSwitch(int cSocket, string cIP) {
 	bool isAGoodBoi;
 	string msg, loggedUs;
 	sockenSchnuffler sReader;
 
 	do {
-		message = mailServer->receiveMessage(clientSocket, isAGoodBoi, sReader);
+		msg = mServer->recMessage(cSocket, isAGoodBoi, sReader);
 
 		if (isAGoodBoi) {
-			cout << "Received " << msg << " from " << clientIP << " logged in as \"" << loggedUs << "\"" << endl;
+			cout << "Von " << cIP << " angemeldet als " << loggedUs<<" empfangene Nachricht:  " << msg << "\""  << endl;
 			// mach was mit den kommands
-			if (message == "LOGIN") {
-				loggedUs = mServer->LOGIN(cSocket, cIP, sReader);
+			if (msg == "LOGIN") {
+				//loggedUs = mServer->LOGIN(cSocket, cIP, sReader);
 				if (loggedUs == "_BANNED_") break;
 			}
 			else if (msg == "SEND") {
-				mServer->SEND(clientSocket, loggedUs, sReader);
+				//mServer->SEND(clientSocket, loggedUs, sReader);
 			}
 			else if (msg == "LIST") {
-				mServer->LIST(clientSocket, loggedUs);
+				//mServer->LIST(clientSocket, loggedUs);
 			}
 			else if (msg == "READ") {
-				mServer->READ(clientSocket, loggedUs, sReader);
+				//mServer->READ(clientSocket, loggedUs, sReader);
 			}
 			else if (msg == "DEL") {
-				mServer->DEL(clientSocket, loggedUs, sReader);
+				//mServer->DEL(clientSocket, loggedUs, sReader);
 			}
 			else if (msg != "QUIT") {
 				cout << "Kenn ich nicht." << endl;
@@ -212,12 +215,12 @@ void threadChef(int cSocket, string cIP) {
 		}
 		else
 		{
-			cerr << programName << ": Fehler beim Empfangen." << endl;
+			cerr << progName << ": Fehler beim Empfangen." << endl;
 		}
 	} while (msg != "QUIT" && isAGoodBoi);
 
-	// clean up connection
-	mServer->closeConnection(cSocket);
+	// schließen und putzen
+	mServer->extConnect(cSocket);
 	{
 		goodBois.erase(cSocket);
 	}

@@ -15,6 +15,8 @@
 #include <string.h>
 #include <list>
 
+using namespace std;
+
 //gibt die derzeitige zeit aus
 long timeNow(string einheit)
 {

@@ -21,6 +21,8 @@
 #include <sys/stat.h>
 #include <stdlib.h>
 
+using namespace std;
+
 int dirExists(const char *path);
 int dirExists(std::string path);
 bool isDigit(std::string string);
@@ -29,7 +31,7 @@ std::string toLower(std::string string);
 bool isEqual(std::string str1, std::string str2);
 std::string getMessageLine(int i, std::list<std::string> message);
 //bool acceptConnection(int& clientSocket, string&clientIP);
-long timeNow(string einheit);
+long timeNow(std::string einheit);
 
 
 #endif /* FUNCTIONS_H */

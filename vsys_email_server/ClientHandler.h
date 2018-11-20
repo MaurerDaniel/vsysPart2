@@ -41,11 +41,13 @@ class Server {
 public:
 	Server(string prgName, int srvrPort, string mailDirect);
 	~Server();
-	void acceptConnection(int& clientSocket, string& clientIP);
+	bool acceptConnection(int& cSocket, string& cIP);
 	void sendMessage(int clientSocket, string message);
-	void split(string str, char deliimiter);
+	vector<string> split(string str, char delimiter);
 	void beginListen();
 	void extConnect(int cSocket);
+	string recMessage (int cSocket, bool& isGoodBoi, sockenSchnuffler& socketReader);
+	bool createUserDir(std::string userFolder);
 
 
 private:
@@ -53,6 +55,7 @@ private:
 	map<string, bannedClient> bannedList;
 	string progName;
 	int srvrSocket;
+	string mailDirect;
 
 };
 

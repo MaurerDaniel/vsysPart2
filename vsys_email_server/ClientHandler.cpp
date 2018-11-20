@@ -4,24 +4,19 @@
  *
  * Created on October 24, 2018, 2:21 PM
  */
-#include <chrono> // duration_cast, seconds, milliseconds, system_clock::now()
-#include <sstream> // istringstream
-#include <sys/stat.h> // mkdir(), RWX macros
-#include <unistd.h> // read()
-#include <termios.h> // struct termios, tcgetattr(), tcsetattr(), ECHO, TCSANOW
-#include <uuid/uuid.h> // uuid_t, uuid_generate(), uuid_unparse()
+#include <chrono> 
+#include <sstream> 
+#include <sys/stat.h> 
+#include <unistd.h>
+#include <termios.h> 
+#include <uuid/uuid.h> 
+#include <arpa/inet.h> 
+#include <string.h> 
+#include <fstream>
+#include <dirent.h>
+#include <algorithm> 
+#include <mutex> 
 #include <iostream>
-#include <arpa/inet.h> // inet_ntoa()
-#include <unistd.h> // close()
-#include <string.h> // memset(), strcpy(), strlen(), strncmp()
-#include <fstream> // ifstream, ofstream
-#include <dirent.h> // DIR, opendir(), readdir(), closedir()
-#include <algorithm> // sort()
-#include <sstream> // stringstream
-#include <mutex> // mutex
-#include <iostream>
-#include "server.h"
-#include "../Helper/helper.h"
 #include <cstdio>
 #include <iostream>
 #include <unistd.h>
@@ -224,11 +219,11 @@ Server::Server(string progName, int srvrPort, string mailDirect)
 	struct sockaddr_in srvrAddr;
 
 	this->progName = progName;
-	this->addlren = sizeof(struct sockaddr_in);
+	this->addrlen = sizeof(struct sockaddr_in);
 	this->mailDirect = mailDirect;
 	// mail directory erstellen
-	bool good = FileHandler::createUserDir(mailDirect);
-	if (!good) return EXIT_FAILURE;
+	bool good = Server::createUserDir(mailDirect);
+	if (!good) exit(EXIT_FAILURE);
 
 	memset(&srvrAddr, 0, sizeof(srvrAddr));
 	srvrAddr.sin_family = AF_INET;
@@ -239,28 +234,55 @@ Server::Server(string progName, int srvrPort, string mailDirect)
 	if (this->srvrSocket == -1)
 	{
 		perror("Fehler beim erstellen von Socket.");
-		return EXIT_FAILURE;
+		exit(EXIT_FAILURE);
 	}
 	int bindRtrn = bind(this->srvrSocket, (struct sockaddr*) &srvrAddr, sizeof(srvrAddr));
 	if (bindRtrn != 0)
 	{
 		perror("Fehler beim bind von Socket.");
-		return EXIT_FAILURE;
+		exit(EXIT_FAILURE);
 	}
 	cout << "Port: " << srvrPort << " Directory: \"" << mailDirect << "\"" << "." << endl;
 
 }
+
+bool Server::createUserDir (string path) {
+  vector<string> tokens = split(path, '/');
+  string concatPath = "";
+
+  for (int i = 0; i < (int) tokens.size(); i++) {
+    if (i == 0 && tokens[i] == "") {
+      concatPath += "/";
+      continue;
+    }
+
+    concatPath += tokens[i] + "/";
+    int status = mkdir(concatPath.c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+
+    if (status == 0) {
+      cout << "Ordner-Struktur " << concatPath << " wurde erfolgreich erstellt." << endl;
+    }
+    else if (errno != EEXIST) {
+      // catch EEXIST: directory already exists, no need for creating
+      cerr << "mkdir (" << concatPath << ") error: " << errno << endl;
+      return false;
+    }
+  }
+
+  return true;
+}
+
 // listener
 void Server::beginListen()
 {
 
 	cout << "Ich höre.." << endl;
-	int listnRet = listen(this->serverSocket, 5);
+	int listnRet = listen(this->srvrSocket, 5);
 
 	if (listnRet != 0)
 	{
 		perror("Fehler beim zuhören.");
-		return EXIT_FAILURE;
+		exit(EXIT_FAILURE);
 	}
 }
 
@@ -269,7 +291,7 @@ bool Server::acceptConnection(int& clientSocket, string&clientIP)
 {
 	struct sockaddr_in clientAdrr;
 
-	clientSocket = accept(this->serverSocket, (struct sockaddr *) & clientAdrr, this->&addrlen);
+	clientSocket = accept(this->srvrSocket, (struct sockaddr *) & clientAdrr, &this->addrlen);
 
 	if (clientSocket > 0)
 	{
@@ -299,8 +321,29 @@ bool Server::acceptConnection(int& clientSocket, string&clientIP)
 			}
 		}
 		// klinet akepztiert
-		this->sendMessage(clientSocket, "Halli hallo. Bitte geben Sie Ihren Wunsch an:")
+		this->sendMessage(clientSocket, "Halli hallo. Bitte geben Sie Ihren Wunsch an:");
 	}
+}
+
+string Server::recMessage (int cSocket, bool& isGoodBoi, sockenSchnuffler& socketReader)
+{
+	bool good;
+	string zeile = socketReader.readLine(cSocket, good);
+	if(good)
+	{
+		if(!zeile.empty()) 
+		{
+			isGoodBoi = true;
+			return zeile;
+		}
+	}
+	else
+	{
+		perror("Fehler beim Lesen");
+		exit(EXIT_FAILURE);
+	}
+	isGoodBoi = false;
+	return "";
 }
 
 // nachricht/antowrt wird geschickt
@@ -308,10 +351,10 @@ void Server::sendMessage(int clientScoket, string msg)
 {
 	vector <string> zeilen = split(msg, '\n');
 
-	for (int i = 0; i < (int)lines.size(), i++)
+	for (int i = 0; i < (int)zeilen.size(); i++)
 	{
 		string zeile = zeile[i] + "\n";
-		ssize_t charGsnd = send(clientScoket, zeile.c_str(), zeile.length(), MSG_NOTSIGNAL);
+		ssize_t charGsnd = send(clientScoket, zeile.c_str(), zeile.length(), MSG_NOSIGNAL);
 
 		if (charGsnd == -1)
 		{
@@ -324,13 +367,13 @@ void Server::sendMessage(int clientScoket, string msg)
 		{
 			perror("Fehler beim Verbindungsaufbau");
 		}
-		return EXIT_FAILURE;
+		exit(EXIT_FAILURE);
 	}
 }
 
 
 // taken from //www.fluentcpp.com/2017/04/21/how-to-split-a-string-in-c/
-void Server::split(string str, char deliimiter)
+vector<string> Server::split(string str, char delimiter)
 {
 	vector<string> tokens;
 	string token;
@@ -352,7 +395,7 @@ void Server::extConnect(int cSocket) {
 	if (closeReturn != 0)
 	{
 		perror("Fehler beim Schließen.");
-		return EXIT_FAILURE;
+		exit(EXIT_FAILURE);
 	}
 }
 
@@ -369,7 +412,7 @@ string sockenSchnuffler::readLine(int fd, bool& success) {
 	string line = "";
 
 	while (1) {
-		rc = SocketReader::myRead(fd, &c);
+		rc = sockenSchnuffler::myRead(fd, &c);
 
 		if (rc == 1) {        // a char was read
 			if (c == '\n') {
