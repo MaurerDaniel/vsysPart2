@@ -47,7 +47,19 @@ public:
 	void beginListen();
 	void extConnect(int cSocket);
 	string recMessage (int cSocket, bool& isGoodBoi, sockenSchnuffler& socketReader);
+	// copied from other group
 	bool createUserDir(std::string userFolder);
+	void SEND(int clientSocket, string loggedInUser, SocketReader& socketReader);
+	void LIST(int clientSocket, string loggedInUser);
+	void READ(int clientSocket, string loggedInUser, SocketReader& socketReader);
+	void DEL(int clientSocket, string loggedInUser, SocketReader& socketReader);
+	
+	void sendMessage(int clientSocket, string message);
+	bool storeMail(string sender, string receivers, string subject, string message);
+	map<string, string> getMailSubjects(string receiver);
+	vector<string> getMailFilenames(string receiver);
+	set<string> parseReceivers(string receivers);
+
 
 
 private:

@@ -399,7 +399,442 @@ void Server::extConnect(int cSocket) {
 	}
 }
 
+/**
+ * Takes care of the SEND command from the client. copied
+ */
+void Server::SEND(int clientSocket, string loggedInUser, SocketReader& socketReader) {
+	bool isClientActive;
+	string receivers = this->receiveMessage(clientSocket, isClientActive, socketReader);
+	string subject = this->receiveMessage(clientSocket, isClientActive, socketReader);
+	string message = this->receiveMessage(clientSocket, isClientActive, socketReader); // always receive first message line
+	string currentLine;
 
+	do {
+		currentLine = this->receiveMessage(clientSocket, isClientActive, socketReader);
+
+		if (currentLine != ".") {
+			message += "\n" + currentLine;
+		}
+	} while (currentLine != "." && isClientActive);
+
+	// if client socket not closed
+	if (isClientActive) {
+		// if user is logged in
+		if (loggedInUser != "") {
+			set<string> receiversSet = this->parseReceivers(receivers);
+			bool errorFlag = false;
+
+			// check length of subject
+			if (receiversSet.size() == 0 || subject.length() > 80) {
+				{
+					lock_guard<mutex> terminalGuard(this->terminalMutex);
+					cout << "No receivers or subject length exceeded." << endl;
+				}
+				errorFlag = true;
+			}
+			else {
+				bool storeSuccess = this->storeMail(loggedInUser, receivers, subject, message);
+
+				if (!storeSuccess) {
+					errorFlag = true;
+				}
+			}
+
+			this->sendMessage(clientSocket, errorFlag ? "ERR" : "OK");
+		}
+		else {
+			this->sendMessage(clientSocket, "LOGIN REQUIRED");
+		}
+	}
+}
+
+
+/**
+ * Parses the receivers and returns them in a set.
+ */
+set<string> Server::parseReceivers(string receivers) {
+	set<string> receiversSet;
+	vector<string> receiversSplitted = GeneralHelper::split(receivers, ',');
+
+	for (string receiver : receiversSplitted) {
+		if (receiver != "") {
+			receiversSet.insert(receiver);
+		}
+	}
+
+	return receiversSet;
+}
+
+/**
+ * Stores a mail in the sent folder of the sender and at the receivers, returns if succesful.
+ */
+bool Server::storeMail(string sender, string receivers, string subject, string message) {
+	bool errorFlag = false;
+
+	// 1: build unique id (time_uuid) for filename
+	long now = GeneralHelper::getCurrentTime("ms");
+	string uuid = GeneralHelper::getUUID();
+	string fileName = to_string(now) + "_" + uuid;
+
+	// 2: save in sent folder
+	{
+		lock_guard<mutex> terminalGuard(this->terminalMutex);
+		cout << "Storing mail in sent folder of " << sender << ": " << subject << endl;
+	}
+	bool createDirSuccess;
+	{
+		lock_guard<mutex> dirGuard(this->dirMutex);
+		createDirSuccess = GeneralHelper::createDirectory(this->mailDirectory + "/" + sender + "/sent");
+	}
+	if (createDirSuccess) {
+		string content = sender + "\n" + receivers + "\n" + subject + "\n" + message + "\n.";
+		lock_guard<mutex> fileGuard(this->fileMutex);
+		ofstream mailFile(this->mailDirectory + "/" + sender + "/sent/" + fileName);
+
+		if (mailFile) {
+			mailFile << content << endl;
+			mailFile.close();
+		}
+		else {
+			errorFlag = true;
+		}
+	}
+	else {
+		errorFlag = true;
+	}
+
+	// 3: create symlinks at receivers
+	if (!errorFlag) {
+		set<string> receiversSet = this->parseReceivers(receivers);
+
+		for (string receiver : receiversSet) {
+			if (receiver.length() > 8) {
+				{
+					lock_guard<mutex> terminalGuard(this->terminalMutex);
+					cout << "Receiver " << receiver << " exceeded length, skipping." << endl;
+				}
+				errorFlag = true;
+				continue; // set error and skip too long receiver
+			}
+			{
+				lock_guard<mutex> terminalGuard(this->terminalMutex);
+				cout << "Storing mail " << sender << " -> " << receiver << ": " << subject << endl;
+			}
+			bool createDirSuccess;
+			{
+				lock_guard<mutex> dirGuard(this->dirMutex);
+				createDirSuccess = GeneralHelper::createDirectory(this->mailDirectory + "/" + receiver);
+			}
+			if (createDirSuccess) {
+				string fromFilePath = "../" + sender + "/sent/" + fileName;
+				string toFilePath = this->mailDirectory + "/" + receiver + "/" + fileName;
+
+				lock_guard<mutex> fileGuard(this->fileMutex);
+				int returnSymlink = symlink(fromFilePath.c_str(), toFilePath.c_str());
+
+				if (returnSymlink != 0) {
+					GeneralHelper::printError(this->programName, "symlink");
+					errorFlag = true;
+				}
+			}
+			else {
+				errorFlag = true;
+			}
+		}
+	}
+
+	return !errorFlag;
+}
+
+/**
+ * Takes care of the LIST command from the client.
+ */
+void Server::LIST(int clientSocket, string loggedInUser) {
+	// if user is logged in
+	if (loggedInUser != "") {
+		map<string, string> mailSubjects = this->getMailSubjects(loggedInUser);
+
+		// send number of mails
+		int mailCount = mailSubjects.size();
+		this->sendMessage(clientSocket, to_string(mailCount));
+
+		// send mail id and subject
+		int i = 1;
+
+		for (auto pair : mailSubjects) {
+			string entry = "[" + to_string(i) + "] " + pair.second;
+			this->sendMessage(clientSocket, entry);
+
+			i++;
+		}
+	}
+	else {
+		this->sendMessage(clientSocket, "LOGIN REQUIRED");
+	}
+}
+
+/**
+ * Returns the mail subjects with filename from the mail directory.
+ * By using map the mails get automatically sorted by the time.
+ */
+map<string, string> Server::getMailSubjects(string receiver) {
+	struct dirent *entry;
+	map<string, string> mailSubjects;
+	string dirpath = this->mailDirectory + "/" + receiver;
+
+	// open directory
+	lock_guard<mutex> dirGuard(this->dirMutex);
+	DIR *dp = opendir(dirpath.c_str());
+
+	if (dp != NULL) {
+		// read files in directory
+		while ((entry = readdir(dp)) != NULL) {
+			string filename = entry->d_name;
+
+			// exclude sent folder and ".", ".."
+			if (filename != "." && filename != ".." && filename != "sent") {
+				string filepath = dirpath + "/" + filename;
+				lock_guard<mutex> fileGuard(this->fileMutex);
+				ifstream inFileStream(filepath);
+
+				if (inFileStream) {
+					string subject;
+					getline(inFileStream, subject); // skip sender
+					getline(inFileStream, subject); // skip receiver
+					getline(inFileStream, subject); // only save subject
+
+					mailSubjects[filename] = subject;
+
+					inFileStream.close();
+				}
+			}
+		}
+
+		// close directory
+		int closedirReturn = closedir(dp);
+
+		if (closedirReturn != 0) {
+			GeneralHelper::printError(this->programName, "closedir");
+		}
+	}
+	else {
+		GeneralHelper::printError(this->programName, "opendir");
+	}
+
+	return mailSubjects;
+}
+
+/**
+ * Returns the filenames of the mails from the given user.
+ */
+vector<string> Server::getMailFilenames(string receiver) {
+	struct dirent *entry;
+	vector<string> mailFilenames;
+	string dirpath = this->mailDirectory + "/" + receiver;
+
+	// open directory
+	lock_guard<mutex> dirGuard(this->dirMutex);
+	DIR *dp = opendir(dirpath.c_str());
+
+	if (dp != NULL) {
+		// read files in directory
+		while ((entry = readdir(dp)) != NULL) {
+			string filename = entry->d_name;
+
+			// exclude sent folder and ".", ".."
+			if (filename != "." && filename != ".." && filename != "sent") {
+				mailFilenames.push_back(filename);
+			}
+		}
+
+		// close directory
+		int closedirReturn = closedir(dp);
+
+		if (closedirReturn != 0) {
+			GeneralHelper::printError(this->programName, "closedir");
+		}
+
+		// sort vector
+		sort(mailFilenames.begin(), mailFilenames.end());
+	}
+	else {
+		GeneralHelper::printError(this->programName, "opendir");
+	}
+
+	return mailFilenames;
+}
+
+/**
+ * Takes care of the READ command from the client.
+ */
+void Server::READ(int clientSocket, string loggedInUser, SocketReader& socketReader) {
+	bool isClientActive;
+	string mailIDString = this->receiveMessage(clientSocket, isClientActive, socketReader);
+
+	// if client socket not closed
+	if (isClientActive) {
+		// if user is logged in
+		if (loggedInUser != "") {
+			bool success = false;
+			string mailContent = "";
+			int mailID = 0;
+
+			try {
+				mailID = stoi(mailIDString);
+			}
+			catch (const exception& e) {
+				{
+					lock_guard<mutex> terminalGuard(this->terminalMutex);
+					cerr << this->programName << ": Could not convert \"" + mailIDString + "\" to integer" << endl;
+				}
+			}
+
+			if (mailID > 0) {
+				vector<string> mailFilenames = this->getMailFilenames(loggedInUser);
+
+				// does mail exist
+				if (mailID <= (int)mailFilenames.size()) {
+					string filename = mailFilenames[mailID - 1];
+					string filepath = this->mailDirectory + "/" + loggedInUser + "/" + filename;
+					lock_guard<mutex> fileGuard(this->fileMutex);
+					ifstream inFileStream(filepath);
+
+					if (inFileStream) {
+						// read whole file
+						stringstream fileBuffer;
+						fileBuffer << inFileStream.rdbuf();
+						mailContent = fileBuffer.str();
+
+						inFileStream.close();
+						success = true;
+					}
+				}
+			}
+
+			if (success) {
+				this->sendMessage(clientSocket, "OK");
+				this->sendMessage(clientSocket, mailContent);
+			}
+			else {
+				this->sendMessage(clientSocket, "ERR");
+			}
+		}
+		else {
+			this->sendMessage(clientSocket, "LOGIN REQUIRED");
+		}
+	}
+}
+
+/**
+ * Takes care of the DEL command from the client.
+ */
+void Server::DEL(int clientSocket, string loggedInUser, SocketReader& socketReader) {
+	bool isClientActive;
+	string mailIDString = this->receiveMessage(clientSocket, isClientActive, socketReader);
+
+	// if client socket not closed
+	if (isClientActive) {
+		// if user is logged in
+		if (loggedInUser != "") {
+			bool success = false;
+			int mailID = 0;
+
+			try {
+				mailID = stoi(mailIDString);
+			}
+			catch (const exception& e) {
+				{
+					lock_guard<mutex> terminalGuard(this->terminalMutex);
+					cerr << this->programName << ": Could not convert \"" + mailIDString + "\" to integer" << endl;
+				}
+			}
+
+			if (mailID > 0) {
+				vector<string> mailFilenames = this->getMailFilenames(loggedInUser);
+
+				// does mail exist
+				if (mailID <= (int)mailFilenames.size()) {
+					string filename = mailFilenames[mailID - 1];
+					string filepath = this->mailDirectory + "/" + loggedInUser + "/" + filename;
+
+					// delete file
+					lock_guard<mutex> fileGuard(this->fileMutex);
+					int removeReturn = remove(filepath.c_str());
+
+					if (removeReturn == 0) {
+						success = true;
+					}
+					else {
+						GeneralHelper::printError(this->programName, "remove");
+					}
+				}
+			}
+
+			// send response
+			this->sendMessage(clientSocket, success ? "OK" : "ERR");
+		}
+		else {
+			this->sendMessage(clientSocket, "LOGIN REQUIRED");
+		}
+	}
+}
+
+/**
+ * Taken from tcpip_linux-prog-details.pdf:
+ * Implementation of read() with internal buffer.
+ */
+ssize_t SocketReader::myRead(int fd, char *ptr) {
+	static int   read_cnt = 0;
+	static char  *read_ptr;
+	static char  read_buf[BUF];
+	if (read_cnt <= 0) {
+	again:
+		if ((read_cnt = read(fd, read_buf, sizeof(read_buf))) < 0) { // < 0 error
+			if (errno == EINTR)     // interrupt signal
+				goto again;
+			return (-1);
+		}
+		else if (read_cnt == 0) // 0 bytes read
+			return (0);
+		read_ptr = read_buf;     // no error
+	};
+	read_cnt--;
+	*ptr = *read_ptr++;
+	return (1);
+}
+
+/**
+ * Adapted from tcpip_linux-prog-details.pdf:
+ * Read a '\n' terminated line from a descriptor, char by char.
+ */
+string SocketReader::readLine(int fd, bool& success) {
+	ssize_t rc;
+	char c;
+	string line = "";
+
+	while (1) {
+		rc = SocketReader::myRead(fd, &c);
+
+		if (rc == 1) {        // a char was read
+			if (c == '\n') {
+				break;            // '\n' is found, break out of loop
+			}
+			else {
+				line += c;        // add char to line (do not add '\n')
+			}
+		}
+		else if (rc == 0) {   // no char was read, EOF, break out of loop
+			break;
+		}
+		else {
+			success = false;
+			return "";          // error, errno set by read() in myRead() 
+		}
+	}
+
+	success = true;
+	return line;
+}
 
 
 /**

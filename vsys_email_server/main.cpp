@@ -198,16 +198,16 @@ void threadSwitch(int cSocket, string cIP) {
 				if (loggedUs == "_BANNED_") break;
 			}
 			else if (msg == "SEND") {
-				//mServer->SEND(clientSocket, loggedUs, sReader);
+				mServer->SEND(clientSocket, loggedUs, sReader);
 			}
 			else if (msg == "LIST") {
-				//mServer->LIST(clientSocket, loggedUs);
+				mServer->LIST(clientSocket, loggedUs);
 			}
 			else if (msg == "READ") {
-				//mServer->READ(clientSocket, loggedUs, sReader);
+				mServer->READ(clientSocket, loggedUs, sReader);
 			}
 			else if (msg == "DEL") {
-				//mServer->DEL(clientSocket, loggedUs, sReader);
+				mServer->DEL(clientSocket, loggedUs, sReader);
 			}
 			else if (msg != "QUIT") {
 				cout << "Kenn ich nicht." << endl;
