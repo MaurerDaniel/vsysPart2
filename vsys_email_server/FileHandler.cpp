@@ -25,7 +25,7 @@
 #include <fstream>
 #include <dirent.h>
 #include <sstream>
-
+#include <ldap.h>
 #include "MessageType.h"
 #include "Functions.h"
 
@@ -280,7 +280,7 @@ std::string FileHandler::getMessageSubject(std::string path, std::string message
 
 /**
  * Gibt eine Liste aller Nachrichten inkl. Betreff und Gesamtanzahl zurück
- */
+
 std::list<std::string> FileHandler::listMessages(std::list<std::string> message){
     std::list<std::string> response;
     std::string temp;
@@ -315,7 +315,7 @@ std::list<std::string> FileHandler::listMessages(std::list<std::string> message)
     response.push_front(numberOfFilesStr);
     return response;
 }
-
+*/
 /**
  * Bearbeitet eine Anfrage und ruft je nach Anfrage die jeweilige Funktion dafür auf und
  * schickt die Response als Liste zurück

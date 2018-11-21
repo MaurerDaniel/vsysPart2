@@ -16,6 +16,9 @@
 #include <vector>
 #include "FileHandler.h"
 #include "MessageType.h"
+#include <ldap.h>
+#include <mutex>
+#include <vector> 
 
 using namespace std;
 
@@ -42,19 +45,21 @@ public:
 	Server(string prgName, int srvrPort, string mailDirect);
 	~Server();
 	bool acceptConnection(int& cSocket, string& cIP);
-	void sendMessage(int clientSocket, string message);
+	void sendMessage(int cSocket, string message);
 	vector<string> split(string str, char delimiter);
 	void beginListen();
 	void extConnect(int cSocket);
 	string recMessage (int cSocket, bool& isGoodBoi, sockenSchnuffler& socketReader);
 	// copied from other group
 	bool createUserDir(std::string userFolder);
-	void SEND(int clientSocket, string loggedInUser, SocketReader& socketReader);
-	void LIST(int clientSocket, string loggedInUser);
-	void READ(int clientSocket, string loggedInUser, SocketReader& socketReader);
-	void DEL(int clientSocket, string loggedInUser, SocketReader& socketReader);
-	
-	void sendMessage(int clientSocket, string message);
+	void SEND(int cSocket, string loggedUs, sockenSchnuffler& socketReader);
+	void LIST(int cSocket, string loggedUs);
+	void READ(int cSocket, string loggedUs, sockenSchnuffler& socketReader);
+	void DEL(int cSocket, string loggedUs, sockenSchnuffler& socketReader);
+	string getUUID();
+	mutex termMtx, globVarMtx;
+	long timeNow(string unit);
+
 	bool storeMail(string sender, string receivers, string subject, string message);
 	map<string, string> getMailSubjects(string receiver);
 	vector<string> getMailFilenames(string receiver);
@@ -68,7 +73,24 @@ private:
 	string progName;
 	int srvrSocket;
 	string mailDirect;
+	mutex direcMtx, fileMtx;
 
+};
+
+class helferLDAP {
+
+	#define LDAP_URI "ldap://ldap.technikum-wien.at:389"
+	#define SEARCHBASE "dc=technikum-wien,dc=at"
+	#define SCOPE LDAP_SCOPE_SUBTREE
+	#define ANONYMOUS_USER "" // uid=if17b125,ou=People,dc=technikum-wien,dc=at
+	#define ANONYMOUS_PW "" // plain text password
+
+	bool login(string us, string pw);
+	LDAP* init();
+	bool bindUs(LDAP* ld, string usDN, string pw);
+	void bindAnonym(LDAP* ld);
+	string searchUs(LDAP* ld, string usDN);
+	
 };
 
 class ClientHandler {

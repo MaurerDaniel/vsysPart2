@@ -23,14 +23,15 @@
 #include <iostream>
 #include <signal.h> 
 #include <thread>
-//#include "helper.h"
 
 #include "ClientHandler.h"
 #include "Functions.h"
 
+using namespace std;
+
 #define BUF 1024
 
-using namespace std;
+
 
 /**
  * In der Main Funktion werden die Eingangsparameter auf gültigkeit geprüft und jeweilige Fehler ausgegeben
@@ -198,16 +199,16 @@ void threadSwitch(int cSocket, string cIP) {
 				if (loggedUs == "_BANNED_") break;
 			}
 			else if (msg == "SEND") {
-				mServer->SEND(clientSocket, loggedUs, sReader);
+				mServer->SEND(cSocket, loggedUs, sReader);
 			}
 			else if (msg == "LIST") {
-				mServer->LIST(clientSocket, loggedUs);
+				mServer->LIST(cSocket, loggedUs);
 			}
 			else if (msg == "READ") {
-				mServer->READ(clientSocket, loggedUs, sReader);
+				mServer->READ(cSocket, loggedUs, sReader);
 			}
 			else if (msg == "DEL") {
-				mServer->DEL(clientSocket, loggedUs, sReader);
+				mServer->DEL(cSocket, loggedUs, sReader);
 			}
 			else if (msg != "QUIT") {
 				cout << "Kenn ich nicht." << endl;

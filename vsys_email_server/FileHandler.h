@@ -19,6 +19,8 @@
 #ifndef FILEHANDLER_H
 #define FILEHANDLER_H
 
+using namespace std;
+
 class FileHandler {
 public:
     virtual ~FileHandler();

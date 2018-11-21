@@ -33,10 +33,13 @@
 #include <iterator>
 #include <locale> 
 #include <fstream>
+#include <ldap.h>
 
 #include "ClientHandler.h"
 #include "Functions.h"
 #include "MessageType.h"
+
+using namespace std;
 
 #define MAXLINE 1500
 #ifndef VSYS_EMAIL_SERVER_CLIENTHANDLER_H
@@ -402,15 +405,15 @@ void Server::extConnect(int cSocket) {
 /**
  * Takes care of the SEND command from the client. copied
  */
-void Server::SEND(int clientSocket, string loggedInUser, SocketReader& socketReader) {
+void Server::SEND(int clientSocket, string loggedInUser, sockenSchnuffler& socketReader) {
 	bool isClientActive;
-	string receivers = this->receiveMessage(clientSocket, isClientActive, socketReader);
-	string subject = this->receiveMessage(clientSocket, isClientActive, socketReader);
-	string message = this->receiveMessage(clientSocket, isClientActive, socketReader); // always receive first message line
+	string receivers = this->recMessage(clientSocket, isClientActive, socketReader);
+	string subject = this->recMessage(clientSocket, isClientActive, socketReader);
+	string message = this->recMessage(clientSocket, isClientActive, socketReader); // always receive first message line
 	string currentLine;
 
 	do {
-		currentLine = this->receiveMessage(clientSocket, isClientActive, socketReader);
+		currentLine = this->recMessage(clientSocket, isClientActive, socketReader);
 
 		if (currentLine != ".") {
 			message += "\n" + currentLine;
@@ -427,7 +430,7 @@ void Server::SEND(int clientSocket, string loggedInUser, SocketReader& socketRea
 			// check length of subject
 			if (receiversSet.size() == 0 || subject.length() > 80) {
 				{
-					lock_guard<mutex> terminalGuard(this->terminalMutex);
+					lock_guard<mutex> terminalGuard(this->termMtx);
 					cout << "No receivers or subject length exceeded." << endl;
 				}
 				errorFlag = true;
@@ -448,13 +451,159 @@ void Server::SEND(int clientSocket, string loggedInUser, SocketReader& socketRea
 	}
 }
 
+string Server::getUUID() 
+{
+  uuid_t id;
+  uuid_generate(id);
 
-/**
- * Parses the receivers and returns them in a set.
- */
+  char buffer[100];
+  uuid_unparse(id, buffer);
+	// return as string
+  return buffer;
+}
+
+
+// in ldap mit un und pw anmelden ertun true/false
+bool helferLDAP::login(string us, string pw) {
+  bool success = false;
+
+  LDAP* ld = helferLDAP::init();
+  helferLDAP::bindAnonym(ld);
+
+  string usDN = helferLDAP::searchUs(ld, us);
+
+  if (usDN != "") {
+    // try login
+    success = helferLDAP::bindUs(ld, usDN, pw);
+  }
+
+  // unbind
+  ldap_unbind_ext_s(ld, NULL, NULL);
+
+  return success;
+}
+
+bool helferLDAP::bindUs (LDAP* ld, string usDN, string pw) {
+  BerValue *servercredp;
+  BerValue cred;
+  cred.bv_val = const_cast<char*> (pw.c_str());
+  cred.bv_len = pw.length();
+
+  int rc = ldap_sasl_bind_s (ld, usDN.c_str(), LDAP_SASL_SIMPLE, &cred, NULL, NULL, &servercredp);
+
+  if (rc != LDAP_SUCCESS) {
+    cerr << "LDAP Fehler beim Binding mit User: " << ldap_err2string(rc) << endl;
+    return false;
+  }
+   
+  cout << "LDAP Userbinding erfolgreich" << endl; 
+  return true;
+}
+
+// init von ldap 
+LDAP* helferLDAP::init() {
+  LDAP *ld; 
+  int ldapversion = LDAP_VERSION3;
+  int rc = 0;
+
+  if (ldap_initialize(&ld,LDAP_URI) != LDAP_SUCCESS) {
+    cerr << "ldap_init fehlgeschlagen" << endl;
+    exit (EXIT_FAILURE);
+  }
+
+  cout << "Verbinde zu LDAP Server " << LDAP_URI << endl;
+
+  if ((rc = ldap_set_option(ld, LDAP_OPT_PROTOCOL_VERSION, &ldapversion)) != LDAP_SUCCESS) {
+    cerr << "ldap_set_option(PROTOCOL_VERSION): " << ldap_err2string(rc) << endl;
+    ldap_unbind_ext_s(ld, NULL, NULL);
+    exit (EXIT_FAILURE);
+  }
+
+  if ((rc = ldap_start_tls_s(ld, NULL, NULL)) != LDAP_SUCCESS) {
+    cerr << "ldap_start_tls_s(): " << ldap_err2string(rc) << endl;
+    ldap_unbind_ext_s(ld, NULL, NULL);
+    exit (EXIT_FAILURE);
+  }
+
+  return ld;
+}
+
+void helferLDAP::bindAnonym(LDAP* ld) {
+  BerValue *servercredp;
+  BerValue cred;
+  cred.bv_val = (char *)ANONYMOUS_PW;
+  cred.bv_len = strlen(ANONYMOUS_PW);
+
+  int rc = ldap_sasl_bind_s(ld, ANONYMOUS_USER, LDAP_SASL_SIMPLE, &cred, NULL, NULL, &servercredp);
+
+  if (rc != LDAP_SUCCESS) {
+    cerr << "LDAP anonymous bind error: " << ldap_err2string(rc) << endl;
+    ldap_unbind_ext_s(ld, NULL, NULL);
+    exit (EXIT_FAILURE);
+  }
+  
+  cout << "Anonymer LDAP bind erfolgreich" << endl; 
+}
+
+
+string helferLDAP::searchUs(LDAP* ld, string us) {
+  const char* attributes[] = { "cn", NULL }; 
+  const char* filter = ((string) ("(uid=" + us + ")")).c_str();
+  LDAPMessage *msg; // LDAP result handle
+  string usDN = "";
+
+  // search for user
+  int rc = ldap_search_ext_s (ld, SEARCHBASE, SCOPE, filter, (char **)attributes, 0, NULL, NULL, NULL, 500, &msg);
+
+  if (rc != LDAP_SUCCESS) {
+    cerr << "LDAP Fehler Suche: " << ldap_err2string(rc) << endl;
+    ldap_unbind_ext_s (ld, NULL, NULL);
+    exit (EXIT_FAILURE);
+  }
+
+	// ergebnise mitzählen
+  int ergCount = ldap_count_entries(ld, msg);
+  if (ergCount == 1) {
+    LDAPMessage* a = ldap_first_entry (ld, msg);
+    
+//name setzen
+    usDN = ldap_get_dn (ld, a);
+      
+    // cn attribute checken
+    BerElement *ber; 
+    char* attribute = ldap_first_attribute(ld, a, &ber);
+    BerValue **values = ldap_get_values_len (ld, a, attribute);
+
+    if (values != NULL) {
+      string usCN = "";
+
+// durch loopen
+      for (int i = 0; i < ldap_count_values_len(values); i++) {
+        usCN += values[i]->bv_val;
+      }
+
+      cout << "LDAP User wurde gefunden \"" << us << "\" (" << usCN << ")" << endl;
+// memory freigeben von values
+      ldap_value_free_len (values);
+    }
+
+    // fmemory freigeben für attribte
+    ldap_memfree (attribute);
+    if (ber != NULL) ber_free(ber, 0);
+  }
+
+  // fmemory freigeben für msg
+  ldap_msgfree(msg);
+
+  if (usDN == "") cout << "LDAP User wurde nicht gefunden \"" << us << "\"" << endl;
+  return usDN;
+}
+
+
+
 set<string> Server::parseReceivers(string receivers) {
 	set<string> receiversSet;
-	vector<string> receiversSplitted = GeneralHelper::split(receivers, ',');
+	vector<string> receiversSplitted = Server::split(receivers, ',');
 
 	for (string receiver : receiversSplitted) {
 		if (receiver != "") {
@@ -465,6 +614,17 @@ set<string> Server::parseReceivers(string receivers) {
 	return receiversSet;
 }
 
+long Server::timeNow(string einheit)
+{
+	if (einheit == "s") {
+		return chrono::duration_cast<chrono::seconds>(chrono::system_clock::now().time_since_epoch()).count();
+	}
+	else if (einheit == "ms") {
+		return chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now().time_since_epoch()).count();
+	}
+	return 0;
+}
+
 /**
  * Stores a mail in the sent folder of the sender and at the receivers, returns if succesful.
  */
@@ -472,24 +632,24 @@ bool Server::storeMail(string sender, string receivers, string subject, string m
 	bool errorFlag = false;
 
 	// 1: build unique id (time_uuid) for filename
-	long now = GeneralHelper::getCurrentTime("ms");
-	string uuid = GeneralHelper::getUUID();
+	long now = Server::timeNow("ms");
+	string uuid = Server::getUUID();
 	string fileName = to_string(now) + "_" + uuid;
 
 	// 2: save in sent folder
 	{
-		lock_guard<mutex> terminalGuard(this->terminalMutex);
+		lock_guard<mutex> terminalGuard(this->termMtx);
 		cout << "Storing mail in sent folder of " << sender << ": " << subject << endl;
 	}
 	bool createDirSuccess;
 	{
-		lock_guard<mutex> dirGuard(this->dirMutex);
-		createDirSuccess = GeneralHelper::createDirectory(this->mailDirectory + "/" + sender + "/sent");
+		lock_guard<mutex> dirGuard(this->direcMtx);
+		createDirSuccess = Server::createUserDir(this->mailDirect + "/" + sender + "/sent");
 	}
 	if (createDirSuccess) {
 		string content = sender + "\n" + receivers + "\n" + subject + "\n" + message + "\n.";
-		lock_guard<mutex> fileGuard(this->fileMutex);
-		ofstream mailFile(this->mailDirectory + "/" + sender + "/sent/" + fileName);
+		lock_guard<mutex> fileGuard(this->fileMtx);
+		ofstream mailFile(this->mailDirect + "/" + sender + "/sent/" + fileName);
 
 		if (mailFile) {
 			mailFile << content << endl;
@@ -510,30 +670,30 @@ bool Server::storeMail(string sender, string receivers, string subject, string m
 		for (string receiver : receiversSet) {
 			if (receiver.length() > 8) {
 				{
-					lock_guard<mutex> terminalGuard(this->terminalMutex);
+					lock_guard<mutex> terminalGuard(this->termMtx);
 					cout << "Receiver " << receiver << " exceeded length, skipping." << endl;
 				}
 				errorFlag = true;
 				continue; // set error and skip too long receiver
 			}
 			{
-				lock_guard<mutex> terminalGuard(this->terminalMutex);
+				lock_guard<mutex> terminalGuard(this->termMtx);
 				cout << "Storing mail " << sender << " -> " << receiver << ": " << subject << endl;
 			}
 			bool createDirSuccess;
 			{
-				lock_guard<mutex> dirGuard(this->dirMutex);
-				createDirSuccess = GeneralHelper::createDirectory(this->mailDirectory + "/" + receiver);
+				lock_guard<mutex> dirGuard(this->direcMtx);
+				createDirSuccess = Server::createUserDir(this->mailDirect + "/" + receiver);
 			}
 			if (createDirSuccess) {
 				string fromFilePath = "../" + sender + "/sent/" + fileName;
-				string toFilePath = this->mailDirectory + "/" + receiver + "/" + fileName;
+				string toFilePath = this->mailDirect + "/" + receiver + "/" + fileName;
 
-				lock_guard<mutex> fileGuard(this->fileMutex);
+				lock_guard<mutex> fileGuard(this->fileMtx);
 				int returnSymlink = symlink(fromFilePath.c_str(), toFilePath.c_str());
 
 				if (returnSymlink != 0) {
-					GeneralHelper::printError(this->programName, "symlink");
+				perror("Fehler bei Symlink.");
 					errorFlag = true;
 				}
 			}
@@ -580,10 +740,10 @@ void Server::LIST(int clientSocket, string loggedInUser) {
 map<string, string> Server::getMailSubjects(string receiver) {
 	struct dirent *entry;
 	map<string, string> mailSubjects;
-	string dirpath = this->mailDirectory + "/" + receiver;
+	string dirpath = this->mailDirect + "/" + receiver;
 
 	// open directory
-	lock_guard<mutex> dirGuard(this->dirMutex);
+	lock_guard<mutex> dirGuard(this->direcMtx);
 	DIR *dp = opendir(dirpath.c_str());
 
 	if (dp != NULL) {
@@ -594,7 +754,7 @@ map<string, string> Server::getMailSubjects(string receiver) {
 			// exclude sent folder and ".", ".."
 			if (filename != "." && filename != ".." && filename != "sent") {
 				string filepath = dirpath + "/" + filename;
-				lock_guard<mutex> fileGuard(this->fileMutex);
+				lock_guard<mutex> fileGuard(this->fileMtx);
 				ifstream inFileStream(filepath);
 
 				if (inFileStream) {
@@ -614,11 +774,11 @@ map<string, string> Server::getMailSubjects(string receiver) {
 		int closedirReturn = closedir(dp);
 
 		if (closedirReturn != 0) {
-			GeneralHelper::printError(this->programName, "closedir");
+			perror("Fehler beim schließen von DIrectory.");
 		}
 	}
 	else {
-		GeneralHelper::printError(this->programName, "opendir");
+			perror("Fehler beim öffnen von DIrectory.");
 	}
 
 	return mailSubjects;
@@ -630,10 +790,10 @@ map<string, string> Server::getMailSubjects(string receiver) {
 vector<string> Server::getMailFilenames(string receiver) {
 	struct dirent *entry;
 	vector<string> mailFilenames;
-	string dirpath = this->mailDirectory + "/" + receiver;
+	string dirpath = this->mailDirect + "/" + receiver;
 
 	// open directory
-	lock_guard<mutex> dirGuard(this->dirMutex);
+	lock_guard<mutex> dirGuard(this->direcMtx);
 	DIR *dp = opendir(dirpath.c_str());
 
 	if (dp != NULL) {
@@ -651,14 +811,14 @@ vector<string> Server::getMailFilenames(string receiver) {
 		int closedirReturn = closedir(dp);
 
 		if (closedirReturn != 0) {
-			GeneralHelper::printError(this->programName, "closedir");
+			perror("Fehler beim Schließen von DIrectory.");
 		}
 
 		// sort vector
 		sort(mailFilenames.begin(), mailFilenames.end());
 	}
 	else {
-		GeneralHelper::printError(this->programName, "opendir");
+			perror("Fehler beim Öffnen von DIrectory.");
 	}
 
 	return mailFilenames;
@@ -667,9 +827,9 @@ vector<string> Server::getMailFilenames(string receiver) {
 /**
  * Takes care of the READ command from the client.
  */
-void Server::READ(int clientSocket, string loggedInUser, SocketReader& socketReader) {
+void Server::READ(int clientSocket, string loggedInUser, sockenSchnuffler& socketReader) {
 	bool isClientActive;
-	string mailIDString = this->receiveMessage(clientSocket, isClientActive, socketReader);
+	string mailIDString = this->recMessage(clientSocket, isClientActive, socketReader);
 
 	// if client socket not closed
 	if (isClientActive) {
@@ -684,8 +844,8 @@ void Server::READ(int clientSocket, string loggedInUser, SocketReader& socketRea
 			}
 			catch (const exception& e) {
 				{
-					lock_guard<mutex> terminalGuard(this->terminalMutex);
-					cerr << this->programName << ": Could not convert \"" + mailIDString + "\" to integer" << endl;
+					lock_guard<mutex> terminalGuard(this->termMtx);
+					cerr << this->progName << ": Could not convert \"" + mailIDString + "\" to integer" << endl;
 				}
 			}
 
@@ -695,8 +855,8 @@ void Server::READ(int clientSocket, string loggedInUser, SocketReader& socketRea
 				// does mail exist
 				if (mailID <= (int)mailFilenames.size()) {
 					string filename = mailFilenames[mailID - 1];
-					string filepath = this->mailDirectory + "/" + loggedInUser + "/" + filename;
-					lock_guard<mutex> fileGuard(this->fileMutex);
+					string filepath = this->mailDirect + "/" + loggedInUser + "/" + filename;
+					lock_guard<mutex> fileGuard(this->fileMtx);
 					ifstream inFileStream(filepath);
 
 					if (inFileStream) {
@@ -728,9 +888,9 @@ void Server::READ(int clientSocket, string loggedInUser, SocketReader& socketRea
 /**
  * Takes care of the DEL command from the client.
  */
-void Server::DEL(int clientSocket, string loggedInUser, SocketReader& socketReader) {
+void Server::DEL(int clientSocket, string loggedInUser, sockenSchnuffler& socketReader) {
 	bool isClientActive;
-	string mailIDString = this->receiveMessage(clientSocket, isClientActive, socketReader);
+	string mailIDString = this->recMessage(clientSocket, isClientActive, socketReader);
 
 	// if client socket not closed
 	if (isClientActive) {
@@ -744,8 +904,8 @@ void Server::DEL(int clientSocket, string loggedInUser, SocketReader& socketRead
 			}
 			catch (const exception& e) {
 				{
-					lock_guard<mutex> terminalGuard(this->terminalMutex);
-					cerr << this->programName << ": Could not convert \"" + mailIDString + "\" to integer" << endl;
+					lock_guard<mutex> terminalGuard(this->termMtx);
+					cerr << this->progName << ": Could not convert \"" + mailIDString + "\" to integer" << endl;
 				}
 			}
 
@@ -755,17 +915,17 @@ void Server::DEL(int clientSocket, string loggedInUser, SocketReader& socketRead
 				// does mail exist
 				if (mailID <= (int)mailFilenames.size()) {
 					string filename = mailFilenames[mailID - 1];
-					string filepath = this->mailDirectory + "/" + loggedInUser + "/" + filename;
+					string filepath = this->mailDirect + "/" + loggedInUser + "/" + filename;
 
 					// delete file
-					lock_guard<mutex> fileGuard(this->fileMutex);
+					lock_guard<mutex> fileGuard(this->fileMtx);
 					int removeReturn = remove(filepath.c_str());
 
 					if (removeReturn == 0) {
 						success = true;
 					}
 					else {
-						GeneralHelper::printError(this->programName, "remove");
+						perror("Fehler beim Entfernen.");
 					}
 				}
 			}
@@ -778,64 +938,6 @@ void Server::DEL(int clientSocket, string loggedInUser, SocketReader& socketRead
 		}
 	}
 }
-
-/**
- * Taken from tcpip_linux-prog-details.pdf:
- * Implementation of read() with internal buffer.
- */
-ssize_t SocketReader::myRead(int fd, char *ptr) {
-	static int   read_cnt = 0;
-	static char  *read_ptr;
-	static char  read_buf[BUF];
-	if (read_cnt <= 0) {
-	again:
-		if ((read_cnt = read(fd, read_buf, sizeof(read_buf))) < 0) { // < 0 error
-			if (errno == EINTR)     // interrupt signal
-				goto again;
-			return (-1);
-		}
-		else if (read_cnt == 0) // 0 bytes read
-			return (0);
-		read_ptr = read_buf;     // no error
-	};
-	read_cnt--;
-	*ptr = *read_ptr++;
-	return (1);
-}
-
-/**
- * Adapted from tcpip_linux-prog-details.pdf:
- * Read a '\n' terminated line from a descriptor, char by char.
- */
-string SocketReader::readLine(int fd, bool& success) {
-	ssize_t rc;
-	char c;
-	string line = "";
-
-	while (1) {
-		rc = SocketReader::myRead(fd, &c);
-
-		if (rc == 1) {        // a char was read
-			if (c == '\n') {
-				break;            // '\n' is found, break out of loop
-			}
-			else {
-				line += c;        // add char to line (do not add '\n')
-			}
-		}
-		else if (rc == 0) {   // no char was read, EOF, break out of loop
-			break;
-		}
-		else {
-			success = false;
-			return "";          // error, errno set by read() in myRead() 
-		}
-	}
-
-	success = true;
-	return line;
-}
-
 
 /**
  * Adapted from tcpip_linux-prog-details.pdf:
@@ -869,6 +971,7 @@ string sockenSchnuffler::readLine(int fd, bool& success) {
 	success = true;
 	return line;
 }
+
 
 /**
  * Taken from tcpip_linux-prog-details.pdf:
