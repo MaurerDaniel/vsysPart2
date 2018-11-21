@@ -1,3 +1,5 @@
+
+
 all: server
 
 server: *.cpp
@@ -10,3 +12,5 @@ run: server
 	
 clean:
 	rm -f server server
+
+

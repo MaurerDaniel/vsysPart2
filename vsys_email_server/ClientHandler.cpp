@@ -464,7 +464,8 @@ string Server::getUUID()
 
 
 // in ldap mit un und pw anmelden ertun true/false
-bool helferLDAP::login(string us, string pw) {
+bool helferLDAP::login(string us, string pw) 
+{
   bool success = false;
 
   LDAP* ld = helferLDAP::init();
@@ -884,6 +885,67 @@ void Server::READ(int clientSocket, string loggedInUser, sockenSchnuffler& socke
 		}
 	}
 }
+
+
+string Server::LOGIN(int cSocket, string cIP, sockenSchnuffler& socketReader) 
+{
+  bool isActive;
+  string us = this->recMessage (cSocket, isActive, socketReader);
+  string pw = this->recMessage (cSocket, isActive, socketReader);
+
+  if (isActive) {
+    bool success;
+
+    if (us.length() > 8) {
+      {
+        lock_guard<mutex> terminalGuard(this->termMtx);
+        cout << "Username zu lange." << endl;
+      }
+      success = false;
+    }
+    else {
+// fehler hier drin 
+      bool success = helferLDAP::login(us, pw);
+    }
+    
+    // react to login status
+    if (success) {
+      this->sendMessage (cSocket, "ALL g");
+      {
+        lock_guard<mutex> terminalGuard(this->termMtx);
+        cout << "Client " << cIP << " wurder erfolgreich eingemeldet als " << us << endl;
+      }
+      {
+        lock_guard<mutex> globalVarGuard(this->globVarMtx);
+        this->bannedList[cIP].tries = 0;
+      }
+      return us;
+    }
+    else {
+      this->sendMessage (cSocket, "ERR");
+      lock_guard<mutex> globalVarGuard(this->globVarMtx);
+      int attempts = ++this->bannedList[cIP].tries; // increment, then return it
+      {
+        lock_guard<mutex> terminalGuard(this->termMtx);
+        cout << "Client " << cIP << " login ist mit " << attempts << " Versuchen fehlgeschlagen." << endl;
+      }
+
+      if (attempts >= 3) {
+        // ban client
+        long now = Server::timeNow("s");
+        this->bannedList[cIP].untilBanned = now + BAN_TIME_SECONDS;
+        {
+          lock_guard<mutex> terminalGuard(this->termMtx);
+          cout << "Client " << cIP << " ist für " << BAN_TIME_SECONDS << " Sekunden gesperrt." << endl;
+        }
+        return "_BANNED_";
+      }
+    }
+  }
+
+  return "";
+}
+
 
 /**
  * Takes care of the DEL command from the client.

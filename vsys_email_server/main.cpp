@@ -195,7 +195,7 @@ void threadSwitch(int cSocket, string cIP) {
 			cout << "Von " << cIP << " angemeldet als " << loggedUs<<" empfangene Nachricht:  " << msg << "\""  << endl;
 			// mach was mit den kommands
 			if (msg == "LOGIN") {
-				//loggedUs = mServer->LOGIN(cSocket, cIP, sReader);
+				loggedUs = mServer->LOGIN(cSocket, cIP, sReader);
 				if (loggedUs == "_BANNED_") break;
 			}
 			else if (msg == "SEND") {

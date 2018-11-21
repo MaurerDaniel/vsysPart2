@@ -20,6 +20,9 @@
 #include <mutex>
 #include <vector> 
 
+#define BAN_TIME_SECONDS 1800 // 1800 sec = 30 min
+#define BUF 1500 // buffer size
+
 using namespace std;
 
 class sockenSchnuffler {
@@ -59,6 +62,7 @@ public:
 	string getUUID();
 	mutex termMtx, globVarMtx;
 	long timeNow(string unit);
+	string LOGIN(int cSocket, string cIP, sockenSchnuffler& socketReader);
 
 	bool storeMail(string sender, string receivers, string subject, string message);
 	map<string, string> getMailSubjects(string receiver);
